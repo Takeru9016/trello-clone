@@ -1,100 +1,224 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+import { ListCard, AddList, TaskDialog, ResetDialog } from "@/components";
+import { List, Task } from "@/types/task";
+import { handleListDrop, handleTaskDrop } from "@/utils/dragAndDrop";
+import { loadFromStorage, saveToStorage, updateTaskInList } from "@/lib";
+
+interface DraggedItem {
+  type: "task" | "list";
+  listId?: string;
+  taskId?: string;
+}
+
+export default function TrelloBoard() {
+  const [lists, setLists] = useState<List[]>(loadFromStorage);
+  const [draggedItem, setDraggedItem] = useState<DraggedItem | null>(null);
+  const [isAddingList, setIsAddingList] = useState(false);
+  const [newListTitle, setNewListTitle] = useState("");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+
+  useEffect(() => {
+    saveToStorage(lists);
+  }, [lists]);
+
+  const addList = () => {
+    if (!newListTitle.trim()) return;
+
+    setLists([
+      ...lists,
+      {
+        id: crypto.randomUUID(),
+        title: newListTitle,
+        tasks: [],
+      },
+    ]);
+    setNewListTitle("");
+    setIsAddingList(false);
+  };
+
+  const updateListTitle = (listId: string, newTitle: string) => {
+    setLists(
+      lists.map((list) =>
+        list.id === listId ? { ...list, title: newTitle } : list,
+      ),
+    );
+  };
+
+  const deleteList = (listId: string) => {
+    setLists(lists.filter((list) => list.id !== listId));
+  };
+
+  const addTask = (listId: string) => {
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: "New Task",
+      description: "",
+      dueDate: "",
+    };
+
+    setLists(
+      lists.map((list) =>
+        list.id === listId
+          ? { ...list, tasks: [...list.tasks, newTask] }
+          : list,
+      ),
+    );
+    setSelectedTask(newTask);
+    setSelectedListId(listId);
+    setIsEditingTask(true);
+  };
+
+  const updateTask = (updatedTask: Task) => {
+    if (!selectedListId) return;
+    setLists(updateTaskInList(lists, selectedListId, updatedTask));
+  };
+
+  const deleteTask = (listId: string, taskId: string) => {
+    setLists(
+      lists.map((list) =>
+        list.id === listId
+          ? { ...list, tasks: list.tasks.filter((task) => task.id !== taskId) }
+          : list,
+      ),
+    );
+    setIsEditingTask(false);
+    setSelectedTask(null);
+  };
+
+  const handleDragStart = (
+    e: React.DragEvent,
+    type: "task" | "list",
+    taskId?: string,
+  ) => {
+    const listId = (e.currentTarget.closest("[data-list-id]") as HTMLElement)
+      ?.dataset.listId;
+    setDraggedItem({ type, listId, taskId });
+    e.currentTarget.classList.add("opacity-50");
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove("opacity-50");
+    setDraggedItem(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedItem) return;
+
+    const targetListId = (
+      e.currentTarget.closest("[data-list-id]") as HTMLElement
+    )?.dataset.listId;
+    if (!targetListId) return;
+
+    if (
+      draggedItem.type === "task" &&
+      draggedItem.listId &&
+      draggedItem.taskId
+    ) {
+      setLists(
+        handleTaskDrop(
+          lists,
+          draggedItem.taskId,
+          draggedItem.listId,
+          targetListId,
+        ),
+      );
+    } else if (draggedItem.type === "list" && draggedItem.listId) {
+      setLists(handleListDrop(lists, draggedItem.listId, targetListId));
+    }
+  };
+
+  const resetBoard = () => {
+    setLists([]);
+    localStorage.removeItem("trelloLists");
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <div className="flex min-h-screen flex-col bg-gray-100">
+      <header className="sticky top-0 z-10 flex items-center justify-between bg-white px-4 py-3 shadow-sm md:p-4">
+        <h1 className="text-xl font-bold text-gray-800 md:text-2xl">
+          Trello Clone
+        </h1>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="md:size-md"
+          onClick={() => setIsResetDialogOpen(true)}
+        >
+          Reset Board
+        </Button>
+        <ResetDialog
+          isOpen={isResetDialogOpen}
+          onOpenChange={setIsResetDialogOpen}
+          onConfirm={() => {
+            resetBoard();
+            setIsResetDialogOpen(false);
+          }}
         />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+      </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+      <main className="flex-1 overflow-hidden p-2 md:p-4">
+        <div className="flex min-h-[calc(100vh-10rem)] items-start gap-3 overflow-x-auto pb-4 md:gap-4">
+          {lists.map((list) => (
+            <ListCard
+              key={list.id}
+              list={list}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDeleteList={() => deleteList(list.id)}
+              onAddTask={() => addTask(list.id)}
+              onTaskClick={(task) => {
+                setSelectedTask(task);
+                setSelectedListId(list.id);
+                setIsEditingTask(true);
+              }}
+              onUpdateListTitle={(newTitle) =>
+                updateListTitle(list.id, newTitle)
+              }
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          ))}
+
+          <AddList
+            isAdding={isAddingList}
+            title={newListTitle}
+            onTitleChange={setNewListTitle}
+            onAdd={addList}
+            onCancel={() => {
+              setIsAddingList(false);
+              setNewListTitle("");
+            }}
+            onStartAdding={() => setIsAddingList(true)}
+          />
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+
+      <TaskDialog
+        task={selectedTask}
+        isOpen={isEditingTask}
+        onOpenChange={setIsEditingTask}
+        onUpdate={updateTask}
+        onDelete={() =>
+          selectedListId &&
+          selectedTask &&
+          deleteTask(selectedListId, selectedTask.id)
+        }
+      />
+
+      <footer className="mt-auto border-t bg-white p-4 text-center text-sm text-gray-500">
+        Trello Clone - Built with Next.js & Shadcn/ui
       </footer>
     </div>
   );
